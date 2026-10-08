@@ -229,7 +229,7 @@ function crearQuad() {
 
   // visual simple
   quad = new THREE.Group();
-  var matCarroceria = new THREE.MeshPhongMaterial({ color: 0xff6600, shininess: 60 });
+  var matCarroceria = new THREE.MeshPhongMaterial({ color: 0xff66ff, shininess: 60 });
   var matNegro = new THREE.MeshPhongMaterial({ color: 0x222222 });
 
   var chasis = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.3, 1.8), matCarroceria);
