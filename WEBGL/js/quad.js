@@ -303,7 +303,7 @@ function controlarQuad(delta) {
     var cabeceo = 0;
     if (controls.moveForward) cabeceo = -10;  //aplico una pequeña corrección para que no se me hunda el morro cuando salto, o el culo cuando salto para atras
     //si aplico una fuerza muy alta puedo hacer un backflip
-    if (controls.moveBackward) cabeceo = 1.2;
+    if (controls.moveBackward) cabeceo = 10;
     wLocal.x += (cabeceo - wLocal.x) * Math.min(1, delta * 4);
     chassisBody.quaternion.vmult(wLocal, chassisBody.angularVelocity);
   }
