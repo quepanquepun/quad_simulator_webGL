@@ -28,11 +28,242 @@
       z-index: 1;
     }
   </style>
+  <link href="https://fonts.googleapis.com/css2?family=Russo+One&display=swap" rel="stylesheet">
+  <style>
+    #hud {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      font-family: 'Russo One', sans-serif;
+      color: #fff;
+    }
+
+    #hud-puntos {
+      position: absolute;
+      top: 20px;
+      right: 30px;
+      font-size: 34px;
+      text-shadow: 0 0 10px #ff66ff;
+    }
+
+    #hud-truco {
+      position: absolute;
+      bottom: 18%;
+      width: 100%;
+      text-align: center;
+      opacity: 0;
+      transform: scale(0.8);
+      transition: opacity .25s, transform .25s;
+    }
+
+    #hud-truco.visible {
+      opacity: 1;
+      transform: scale(1);
+    }
+
+    #hud-truco-nombre {
+      display: block;
+      font-size: 44px;
+      letter-spacing: 3px;
+      text-shadow: 0 0 12px #00ffff;
+    }
+
+    #hud-truco-pts {
+      display: block;
+      font-size: 30px;
+      color: #ffcc33;
+    }
+
+    .oculto {
+      display: none !important;
+    }
+
+    #hud-tiempo {
+      position: absolute;
+      top: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 40px;
+      text-shadow: 0 0 10px #000;
+    }
+
+    #hud-tiempo.urgente {
+      color: #ff4455;
+      animation: parpadeo .5s infinite;
+    }
+
+    #menu {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: radial-gradient(ellipse at center, rgba(5, 8, 12, .45), rgba(5, 8, 12, .9));
+      font-family: 'Russo One', sans-serif;
+      color: #e8edf2;
+    }
+
+    #menu .panel {
+      width: min(560px, 92vw);
+      max-height: 92vh;
+      overflow-y: auto;
+      box-sizing: border-box;
+      padding: 30px 36px;
+      background: rgba(14, 18, 24, .88);
+      border: 1px solid #2c343e;
+      border-top: 4px solid #ffb000;
+    }
+
+    #menu h1 {
+      margin: 0 0 22px;
+      font-size: 42px;
+      letter-spacing: 2px;
+      font-weight: normal;
+    }
+
+    #menu h1 span {
+      display: block;
+      font-size: 14px;
+      color: #ffb000;
+      letter-spacing: 6px;
+    }
+
+    .controles {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: system-ui, sans-serif;
+      font-size: 15px;
+    }
+
+    .controles td {
+      padding: 6px 0;
+      border-bottom: 1px solid #222a33;
+    }
+
+    .controles td:first-child {
+      width: 38%;
+      color: #ffb000;
+      font-family: 'Russo One', sans-serif;
+    }
+
+    #resultado {
+      text-align: center;
+      margin-bottom: 22px;
+    }
+
+    .res-titulo {
+      color: #8a96a3;
+      letter-spacing: 4px;
+      font-size: 14px;
+    }
+
+    #res-puntos {
+      font-size: 58px;
+    }
+
+    #res-categoria {
+      font-size: 26px;
+      letter-spacing: 3px;
+    }
+
+    #res-medalla,
+    #res-record {
+      font-family: system-ui, sans-serif;
+      font-size: 14px;
+      color: #8a96a3;
+      margin-top: 4px;
+    }
+
+    .metas {
+      margin-top: 16px;
+      font-size: 13px;
+      color: #8a96a3;
+      font-family: system-ui, sans-serif;
+      text-align: center;
+    }
+
+    #empezar {
+      margin-top: 22px;
+      text-align: center;
+      font-size: 18px;
+      animation: parpadeo 1.2s infinite;
+    }
+
+    @keyframes parpadeo {
+      50% {
+        opacity: .35;
+      }
+    }
+  </style>
 </head>
 
 <body>
   <!-- Contenedor de la aplicacion -->
   <div id="container"></div>
+  <!-- Menu inicial: controles y, al acabar una sesion, el resultado -->
+  <div id="menu">
+    <div class="panel">
+      <h1>NAVE 7<span>FREESTYLE QUAD TRAINING</span></h1>
+
+      <div id="resultado" class="oculto">
+        <div class="res-titulo">SESIÓN TERMINADA</div>
+        <div id="res-puntos">0</div>
+        <div id="res-categoria">ROOKIE</div>
+        <div id="res-medalla"></div>
+        <div id="res-record"></div>
+      </div>
+
+      <table class="controles">
+        <tr>
+          <td>W / S</td>
+          <td>Acelerar / frenar y marcha atrás</td>
+        </tr>
+        <tr>
+          <td>A / D</td>
+          <td>Girar</td>
+        </tr>
+        <tr>
+          <td>ESPACIO</td>
+          <td>Freno de mano (derrapes)</td>
+        </tr>
+        <tr>
+          <td>↑ / ↓</td>
+          <td>Frontflip / Backflip (en el aire)</td>
+        </tr>
+        <tr>
+          <td>← / →</td>
+          <td>Sideflip (en el aire)</td>
+        </tr>
+        <tr>
+          <td>Q / E</td>
+          <td>Spin (en el aire)</td>
+        </tr>
+        <tr>
+          <td>R / T</td>
+          <td>Enderezar / volver a la salida</td>
+        </tr>
+        <tr>
+          <td>ESC</td>
+          <td>Terminar la sesión</td>
+        </tr>
+        <tr>
+          <td>G</td>
+          <td>Panel de ajustes gráficos</td>
+        </tr>
+      </table>
+
+      <div class="metas">Bronce 15.000 · Plata 35.000 · Oro 60.000</div>
+      <div id="empezar">Cargando texturas…</div>
+    </div>
+  </div>
+
+  <!-- HUD de juego (oculto hasta empezar la sesion) -->
+  <div id="hud" class="oculto">
+    <div id="hud-tiempo">3:00</div>
+    <div id="hud-puntos">0</div>
+    <div id="hud-truco"><span id="hud-truco-nombre"></span><span id="hud-truco-pts"></span></div>
+  </div>
 
   <!-- Librerias -->
   <script src="WEBGL/lib/three.min_r140.js"></script>
@@ -40,6 +271,15 @@
   <script src="WEBGL/lib/GLTFLoader.js"></script>
   <script src="WEBGL/lib/cannon_062.js"></script>
   <script src="WEBGL/lib/stats.min.js"></script>
+
+  <!-- BLOOM- dependencias clasicas de Three.js r140, sin modulos. -->
+  <script src="WEBGL/effects/js/CopyShader.js"></script>
+  <script src="WEBGL/effects/js/LuminosityHighPassShader.js"></script>
+  <script src="WEBGL/effects/js/EffectComposer.js"></script>
+  <script src="WEBGL/effects/js/RenderPass.js"></script>
+  <script src="WEBGL/effects/js/ShaderPass.js"></script>
+  <script src="WEBGL/effects/js/UnrealBloomPass.js"></script>
+  <script src="WEBGL/lib/dat.gui.min.js"></script>
 
   <!-- Nuestro codigo: debe cargarse despues de las librerias -->
   <script src="WEBGL/js/quad.js"></script>
