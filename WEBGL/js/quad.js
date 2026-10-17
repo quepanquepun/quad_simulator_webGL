@@ -7,6 +7,35 @@
  * esa parte se construira durante el seminario.
  */
 
+
+// TEMPORAL: carga el modelo y escribe su estructura en la consola (F12).
+function inspeccionarModelo(ruta) {
+  new THREE.GLTFLoader().load(ruta, function (gltf) {
+    var raiz = gltf.scene;
+    raiz.updateMatrixWorld(true);
+    var lineas = [], triTotal = 0;
+    raiz.traverse(function (o) {
+      var nivel = 0;
+      for (var p = o.parent; p; p = p.parent) nivel++;
+      var caja = new THREE.Box3().setFromObject(o);
+      var tam = caja.getSize(new THREE.Vector3()), centro = caja.getCenter(new THREE.Vector3());
+      var tris = 0;
+      if (o.isMesh) {
+        var g = o.geometry;
+        tris = (g.index ? g.index.count : g.attributes.position.count) / 3;
+        triTotal += tris;
+      }
+      lineas.push('  '.repeat(nivel) + (o.name || '(sin nombre)') + ' [' + o.type + ']' +
+        (o.isMesh ? ' ' + tris + ' tri' : '') +
+        ' | tam ' + tam.x.toFixed(2) + ' x ' + tam.y.toFixed(2) + ' x ' + tam.z.toFixed(2) +
+        ' | centro ' + centro.x.toFixed(2) + ', ' + centro.y.toFixed(2) + ', ' + centro.z.toFixed(2));
+    });
+    console.log(lineas.join('\n'));
+    console.log('TRIANGULOS TOTALES: ' + triTotal);
+  }, undefined, function (e) {
+    console.error('No se pudo cargar el modelo (revisa la ruta y usa el servidor local)', e);
+  });
+}
 // Variables globales basicas de cualquier ejemplo Three.js del curso.
 var renderer, scene, camera;
 var cameraControls;
@@ -21,7 +50,7 @@ const quadMaterial = new CANNON.Material("quadMaterial");
 // nave industrial
 const ancho_nave = 90;      // eje X
 const largo_nave = 140;     // eje Z
-const alto_nave = 18;       // altura hasta la parte baja de las cerchas
+const alto_nave = 20;       // altura hasta la parte baja de las cerchas
 const canto_cercha = 0.8;   // altura de la cercha en los extremos
 const flecha_cercha = 4;    // altura de la cercha en el centro (cumbrera)
 const alto_zocalo = 3;
@@ -116,9 +145,20 @@ var focoSeguimiento, luzRelleno, luzClaraboyas, luzLamparas;
 var pasoGamma;               // ultimo pase del compositor: exposicion + gamma
 const ajustesLuz = { reflejos: 1.0, sombras: true };
 
-// solera de hormigon por losas (PASO 5)
-const TAM_LOSA = 5;          // losas de 5 x 5 m, como una solera industrial real
-const JUNTA_LOSA = 0.025;    // 2.5 cm de junta entre losas
+// suelo con textura de cuadricula (PASO 6)
+const CUADROS_IMAGEN = 3;     // cuantos cuadros tiene la imagen de lado a lado (cuentalos)
+const TAM_CUADRO = 10;       // metros que debe medir cada cuadro dentro de la nave
+const TAM_IMAGEN_SUELO = CUADROS_IMAGEN * TAM_CUADRO;   // metros que ocupa UNA copia de la imagen
+const GIRAR_SUELO = true;     // girar cada copia 0/90/180/270 grados (solo si los cuadros son cuadrados)
+
+// textura de la chapa de las paredes (PASO 7)
+const TAM_TEXTURA_PARED = 4;  // metros que ocupa UNA copia de la imagen en la pared
+
+// tamano de la greca de las paredes (PASO 7)
+const PASO_GRECA = 2.5;       // metros de una greca a la siguiente (antes 1)
+const PROF_GRECA = 0.25;      // metros que sobresale cada greca (antes 0.12; maximo ~0.35)
+
+
 var semillaAzar = 20261016;  // semilla fija: la nave sale igual en cada carga
 
 
@@ -500,6 +540,7 @@ function loadScene() {
   construirRizo({ x: -12, z: 20, radio: 5, ancho: 5, desp: -6.5 });   // entras en x=-12, sales en x=-18.5
   crearQuad();
   crearMarcas();
+  inspeccionarModelo('WEBGL/models/quad/scene.gltf');
 }
 //funciones auxiliares, la de los bordes es del seminario de tron, las otras 2 nuevas
 // copiada de tron-v1.js: dibuja las aristas de un mesh como lineas
@@ -594,11 +635,15 @@ function crearMateriales() {
   // roughness y metalness MULTIPLICAN a los mapas: con roughness 1 un metal nunca refleja nada nitido.
   //
   //                           textura            baldosa respaldo   opciones
-  // suelo: una copia por losa, cada losa con su propio trozo de imagen (ver crearSueloNave)
-  MAT.suelo = materialPBR('hormigon_suelo', TAM_LOSA, 0x8a8d90, { roughness: 0.85, vertexColors: true });
+  // suelo: una copia de la imagen cada TAM_IMAGEN_SUELO metros -> cada cuadro mide TAM_CUADRO
+  MAT.suelo = materialPBR('suelo_cuadricula', TAM_IMAGEN_SUELO, 0x8a8d90, { roughness: 0.85 });
+  // las lineas de la cuadricula vistas de lejos "vibran" (aliasing): mas filtrado anisotropico
+  var anisoSuelo = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  [MAT.suelo.map, MAT.suelo.normalMap, MAT.suelo.roughnessMap].forEach(function (t) { t.anisotropy = anisoSuelo; });
   MAT.hormigon = materialPBR('hormigon_pared', 6, 0x8d8f91, { espejo: true });
-  // chapa lacada gris claro: el relieve lo pone la geometria grecada, no la textura
-  MAT.chapa = materialPBR('metal_pintado', 6, 0xc4c9cf, { color: 0xd3d7dc, metalness: 0.35, roughness: 0.55, relieve: 0.3, espejo: true });
+  // chapa de las paredes: textura propia (PASO 7). SIN espejo: el modo espejo crea figuras
+  // simetricas que el ojo detecta enseguida. La costura se evita eligiendo una textura tileable.
+  MAT.chapa = materialPBR('chapa_pared', TAM_TEXTURA_PARED, 0xb8bec5, { metalness: 0.6, roughness: 0.6, relieve: 0.5 });
   // acero galvanizado: metalico y poco rugoso -> refleja la nave
   MAT.acero = materialPBR('metal_pintado', 3, 0x9aa1aa, { color: 0xb4bbc4, metalness: 0.7, roughness: 0.45, relieve: 0.4, espejo: true });
   MAT.techo = materialPBR('metal_pintado', 8, 0x5d636b, { color: 0x6b7178, metalness: 0.4, roughness: 0.7, relieve: 0.3, espejo: true });
@@ -612,9 +657,6 @@ function crearMateriales() {
   MAT.contAzul = materialPBR('contenedor', 2.5, 0x335f90, { color: 0x3a6fa8, metalness: 0.2, roughness: 0.7 });
   MAT.contGris = materialPBR('contenedor', 2.5, 0x8a9096, { color: 0x9aa0a6, metalness: 0.2, roughness: 0.7 });
 
-  // fondo de las juntas entre losas: se ve solo por las rendijas
-  MAT.junta = new THREE.MeshStandardMaterial({ color: colorSRGB(0x1d1e20), roughness: 1 });
-
   // pintura de seguridad del suelo: recibe luz y sombra; polygonOffset evita el z-fighting
   MAT.lineaSuelo = new THREE.MeshStandardMaterial({
     color: colorSRGB(0xffb000), roughness: 0.6,
@@ -627,36 +669,28 @@ function crearMateriales() {
   MAT.claraboya = new THREE.MeshBasicMaterial({ color: colorSRGB(0xcfe6ff).multiplyScalar(1.6) });
   MAT.led = new THREE.MeshBasicMaterial({ color: colorSRGB(0x5ff2ff).multiplyScalar(3) });
 }
-// Solera de hormigon: UNA sola BufferGeometry (un solo draw call) con una losa
-// por cada 5 x 5 m. Cada losa recibe su propio trozo de la textura (desplazado y
-// girado al azar) y un tono ligeramente distinto (color por vertice), asi la
-// imagen nunca se repite igual en dos losas vecinas. Entre losas queda una
-// rendija de 2.5 cm por la que se ve un plano oscuro: las juntas de dilatacion.
-function crearGeometriaLosas() {
-  var posiciones = [], normales = [], uvs = [], colores = [], indices = [];
-  var nx = Math.round(ancho_nave / TAM_LOSA), nz = Math.round(largo_nave / TAM_LOSA);
-  var s = TAM_LOSA - JUNTA_LOSA;   // lado visible de cada losa
+// Suelo: UNA sola BufferGeometry (un solo draw call) dividida en bloques que miden
+// exactamente una copia de la imagen. Cada bloque usa la imagen entera, girada 0/90/180/270
+// grados al azar: las juntas de la textura siguen cuadrando (estan en los bordes de la
+// imagen), pero las manchas ya no se repiten en el mismo sitio cada pocos metros.
+function crearGeometriaSuelo() {
+  var posiciones = [], normales = [], uvs = [], indices = [];
+  var t = TAM_IMAGEN_SUELO;
+  var nx = Math.ceil(ancho_nave / t), nz = Math.ceil(largo_nave / t);
+  // centrado: si la nave no mide un multiplo exacto, lo que sobra queda bajo las paredes
+  var x0 = -nx * t / 2, z0 = -nz * t / 2;
 
   for (var i = 0; i < nx; i++) {
     for (var j = 0; j < nz; j++) {
-      var x0 = -ancho_nave / 2 + i * TAM_LOSA + JUNTA_LOSA / 2;
-      var z0 = -largo_nave / 2 + j * TAM_LOSA + JUNTA_LOSA / 2;
-
-      // trozo de textura de esta losa: giro de 0/90/180/270 grados + desplazamiento
-      var giro = Math.floor(azar() * 4);
-      var du = azar() * 20, dv = azar() * 20;
-      // tono de esta losa: entre un 88 % y un 106 % del gris de la textura
-      var tono = 0.88 + azar() * 0.18;
-
+      var giro = GIRAR_SUELO ? Math.floor(azar() * 4) : 0;
       var base = posiciones.length / 3;
-      var esquinas = [[0, 0], [0, s], [s, 0], [s, s]];   // (x, z) locales de la losa
-      esquinas.forEach(function (e) {
-        posiciones.push(x0 + e[0], 0, z0 + e[1]);
+      [[0, 0], [0, 1], [1, 0], [1, 1]].forEach(function (e) {
+        posiciones.push(x0 + (i + e[0]) * t, 0, z0 + (j + e[1]) * t);
         normales.push(0, 1, 0);
-        var u = e[0], v = e[1], t;
-        for (var k = 0; k < giro; k++) { t = u; u = v; v = -t; }   // girar 90 grados
-        uvs.push(u + du, v + dv);
-        colores.push(tono, tono * 0.99, tono * 0.97);              // gris un pelin calido
+        // UV en metros (como el resto de la nave), girando 90 grados dentro del bloque
+        var u = e[0] * t, v = e[1] * t, tmp;
+        for (var k = 0; k < giro; k++) { tmp = u; u = v; v = t - tmp; }
+        uvs.push(u, v);
       });
       // dos triangulos mirando hacia arriba (+Y)
       indices.push(base, base + 1, base + 2, base + 1, base + 3, base + 2);
@@ -667,21 +701,14 @@ function crearGeometriaLosas() {
   geo.setAttribute('position', new THREE.Float32BufferAttribute(posiciones, 3));
   geo.setAttribute('normal', new THREE.Float32BufferAttribute(normales, 3));
   geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-  geo.setAttribute('color', new THREE.Float32BufferAttribute(colores, 3));
   geo.setIndex(indices);
   return geo;
 }
 //suelo
 function crearSueloNave() {
-  var suelo = new THREE.Mesh(crearGeometriaLosas(), MAT.suelo);
+  var suelo = new THREE.Mesh(crearGeometriaSuelo(), MAT.suelo);
   suelo.receiveShadow = true;
   scene.add(suelo);
-
-  // fondo oscuro de las juntas, 2 cm por debajo de las losas
-  var fondoJuntas = new THREE.Mesh(new THREE.PlaneGeometry(ancho_nave, largo_nave), MAT.junta);
-  fondoJuntas.rotation.x = -Math.PI / 2;
-  fondoJuntas.position.y = -0.02;
-  scene.add(fondoJuntas);
 
   // linea amarilla de seguridad a 2.5 m de las paredes
   var m = 2.5, g = 0.15;
@@ -749,25 +776,30 @@ function construirRizo(def) {
   cuerpo.position.set(def.x, 0.02, def.z);
   world.addBody(cuerpo);
 }
-//paredes
-// chapa grecada: perfil trapezoidal en planta extruido en vertical
+// chapa grecada: perfil trapezoidal en planta extruido en vertical.
+// Las proporciones de cada greca van en fraccion del paso, asi solo hay que tocar
+// PASO_GRECA (ancho) y PROF_GRECA (profundidad) para cambiar su tamano.
 function crearGeometriaChapa(largo, alto) {
-  var paso = 1.0, prof = 0.12;
+  // el paso se ajusta un poco para que en la pared quepa un numero ENTERO de grecas
+  // (si no, la ultima quedaria cortada o se saldria por la esquina)
+  var n = Math.max(1, Math.round(largo / PASO_GRECA));
+  var paso = largo / n, prof = PROF_GRECA;
   var s = new THREE.Shape();
   s.moveTo(-largo / 2, 0);
-  for (var x = -largo / 2; x < largo / 2 - 0.001; x += paso) {
-    s.lineTo(x + 0.15, prof);   // sube la greca
-    s.lineTo(x + 0.50, prof);   // cresta
-    s.lineTo(x + 0.65, 0);      // baja
-    s.lineTo(x + paso, 0);      // valle
+  for (var i = 0; i < n; i++) {
+    var x = -largo / 2 + i * paso;
+    s.lineTo(x + 0.15 * paso, prof);   // sube la greca
+    s.lineTo(x + 0.50 * paso, prof);   // cresta (35 % del paso)
+    s.lineTo(x + 0.65 * paso, 0);      // baja
+    s.lineTo(x + paso, 0);             // valle (35 % del paso)
   }
   s.lineTo(largo / 2, -0.05);   // espesor de la chapa por detras
   s.lineTo(-largo / 2, -0.05);
   s.closePath();
 
-  var g = new THREE.ExtrudeGeometry(s, { depth: alto, bevelEnabled: false });
-  g.rotateX(-Math.PI / 2);      // la extrusion (eje Z) pasa a ser la altura (eje Y)
-  return g;
+  var geo = new THREE.ExtrudeGeometry(s, { depth: alto, bevelEnabled: false });
+  geo.rotateX(-Math.PI / 2);    // la extrusion (eje Z) pasa a ser la altura (eje Y)
+  return geo;
 }
 
 // Reflejo del rizo con su PROPIA sonda, siempre activa (asi no cambia de aspecto
@@ -811,7 +843,7 @@ function actualizarSondaRizo() {
 }
 
 function crearParedesNave() {
-  var altoTotal = alto_nave + flecha_cercha;   // la pared llega hasta la cumbrera
+  var altoTotal = alto_nave + flecha_cercha + 1.5;   // la pared llega hasta la cumbrera
   var texRayas = crearTexturaRayas();
   // cada pared se construye en local mirando hacia -Z (hacia dentro) y luego se gira
   var paredes = [
