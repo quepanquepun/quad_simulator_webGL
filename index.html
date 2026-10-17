@@ -105,7 +105,12 @@
     }
 
     #menu .panel {
-      width: min(560px, 92vw);
+      width: max-content;
+      /* tan ancho como pida su contenido (el titulo)... */
+      min-width: min(560px, 92vw);
+      /* ...pero nunca mas estrecho que antes */
+      max-width: 92vw;
+      /* y sin salirse de la pantalla */
       max-height: 92vh;
       overflow-y: auto;
       box-sizing: border-box;
@@ -120,6 +125,8 @@
       font-size: 42px;
       letter-spacing: 2px;
       font-weight: normal;
+      white-space: nowrap;
+      /* el titulo nunca se parte en dos lineas */
     }
 
     #menu h1 span {
@@ -204,7 +211,7 @@
   <!-- Menu inicial: controles y, al acabar una sesion, el resultado -->
   <div id="menu">
     <div class="panel">
-      <h1>NAVE 7<span>FREESTYLE QUAD TRAINING</span></h1>
+      <h1>FREESTYLE SIMULATOR<span>NAVE UPV</span></h1>
 
       <div id="resultado" class="oculto">
         <div class="res-titulo">SESIÓN TERMINADA</div>

@@ -8,34 +8,6 @@
  */
 
 
-// TEMPORAL: carga el modelo y escribe su estructura en la consola (F12).
-function inspeccionarModelo(ruta) {
-  new THREE.GLTFLoader().load(ruta, function (gltf) {
-    var raiz = gltf.scene;
-    raiz.updateMatrixWorld(true);
-    var lineas = [], triTotal = 0;
-    raiz.traverse(function (o) {
-      var nivel = 0;
-      for (var p = o.parent; p; p = p.parent) nivel++;
-      var caja = new THREE.Box3().setFromObject(o);
-      var tam = caja.getSize(new THREE.Vector3()), centro = caja.getCenter(new THREE.Vector3());
-      var tris = 0;
-      if (o.isMesh) {
-        var g = o.geometry;
-        tris = (g.index ? g.index.count : g.attributes.position.count) / 3;
-        triTotal += tris;
-      }
-      lineas.push('  '.repeat(nivel) + (o.name || '(sin nombre)') + ' [' + o.type + ']' +
-        (o.isMesh ? ' ' + tris + ' tri' : '') +
-        ' | tam ' + tam.x.toFixed(2) + ' x ' + tam.y.toFixed(2) + ' x ' + tam.z.toFixed(2) +
-        ' | centro ' + centro.x.toFixed(2) + ', ' + centro.y.toFixed(2) + ', ' + centro.z.toFixed(2));
-    });
-    console.log(lineas.join('\n'));
-    console.log('TRIANGULOS TOTALES: ' + triTotal);
-  }, undefined, function (e) {
-    console.error('No se pudo cargar el modelo (revisa la ruta y usa el servidor local)', e);
-  });
-}
 // Variables globales basicas de cualquier ejemplo Three.js del curso.
 var renderer, scene, camera;
 var cameraControls;
@@ -160,6 +132,21 @@ const PROF_GRECA = 0.25;      // metros que sobresale cada greca (antes 0.12; ma
 
 
 var semillaAzar = 20261016;  // semilla fija: la nave sale igual en cada carga
+
+
+// modelo del quad (PASO 8)
+const RUTA_MODELO = 'WEBGL/models/quad/scene.gltf';
+const LARGO_QUAD = 3;          // metros que mide el modelo de punta a punta
+const MODELO_AL_REVES = true;   // ponlo a true si el quad avanza "de culo"
+
+// Parametros de la suspension (los mismos de siempre, ahora con nombre propio
+// porque tambien los usamos para colocar el modelo)
+const ALTO_ANCLAJE = 0.15;          // altura de los anclajes de las ruedas en el chasis
+const SUSPENSION_REPOSO = 0.4;      // largo del muelle sin carga
+const RIGIDEZ_SUSPENSION = 45;
+// Cannon multiplica la fuerza del muelle por la masa: con 4 ruedas el muelle se
+// comprime g / (4 * rigidez) = 5.4 cm por el propio peso. Ahi descansan las ruedas.
+const SUSPENSION_CARGADA = SUSPENSION_REPOSO - 9.8 / (4 * RIGIDEZ_SUSPENSION);
 
 
 // sonda de reflexion del rizo: refleja el quad en tiempo real cuando esta cerca
@@ -540,7 +527,6 @@ function loadScene() {
   construirRizo({ x: -12, z: 20, radio: 5, ancho: 5, desp: -6.5 });   // entras en x=-12, sales en x=-18.5
   crearQuad();
   crearMarcas();
-  inspeccionarModelo('WEBGL/models/quad/scene.gltf');
 }
 //funciones auxiliares, la de los bordes es del seminario de tron, las otras 2 nuevas
 // copiada de tron-v1.js: dibuja las aristas de un mesh como lineas
@@ -1217,36 +1203,16 @@ function crearContenedores() {
 // ---------------------------------------------------------------------------
 // El quad
 // ------------------------------------------------------------------------------
-function crearQuad() {
-  // alto de los anclajes: 20 cm por encima del fondo de la caja (-0.05)
-  var altoAnclaje = 0.15;
-  var anclajes = [[0.6, 0.7], [-0.6, 0.7], [0.6, -0.7], [-0.6, -0.7]];
+// ======================================================================
+// EL QUAD (PASO 8): modelo glTF + fisica calculada a partir del modelo
+// ======================================================================
 
-  chassisBody = new CANNON.Body({ mass: 200, material: quadMaterial });
-  // 1) carroceria
-  chassisBody.addShape(new CANNON.Box(new CANNON.Vec3(0.5, 0.25, 0.9)), new CANNON.Vec3(0, 0.2, 0));
-  // 2) una esfera por rueda: en marcha no tocan el suelo (quedan ~35 cm por encima),
-  //    pero al volcar apoyan ellas y la rueda ya no puede atravesar el plano
-  for (var k = 0; k < 4; k++) {
-    chassisBody.addShape(new CANNON.Sphere(0.3),
-      new CANNON.Vec3(anclajes[k][0], altoAnclaje, anclajes[k][1]));
-  }
-  chassisBody.angularDamping = 0.05;
-  chassisBody.position.copy(pos_inicial);
-
-  // RaycastVehicle
-  vehicle = new CANNON.RaycastVehicle({
-    chassisBody: chassisBody,
-    indexRightAxis: 0,
-    indexUpAxis: 1,
-    indexForwardAxis: 2
-  });
-  // opciones de las ruedas (recomendado por IA)
-  var opcionesRueda = {
-    radius: 0.35,
+function opcionesRueda(radio) {
+  return {
+    radius: radio,
     directionLocal: new CANNON.Vec3(0, -1, 0),     // el rayo va hacia abajo
-    suspensionRestLength: 0.4,                     // largo del muelle en reposo
-    suspensionStiffness: 45,                       // rigidez del muelle
+    suspensionRestLength: SUSPENSION_REPOSO,
+    suspensionStiffness: RIGIDEZ_SUSPENSION,
     maxSuspensionTravel: 0.35,
     dampingRelaxation: 2.5,                        // amortiguador al estirarse
     dampingCompression: 4.4,                       // amortiguador al comprimirse
@@ -1258,10 +1224,33 @@ function crearQuad() {
     customSlidingRotationalSpeed: -30,
     useCustomSlidingRotationalSpeed: true
   };
-  // anclo las ruedas
+}
+
+// Fisica del quad. anclajes: 4 puntos [x, y, z] en el chasis, LAS DOS DELANTERAS PRIMERO
+// (la direccion se aplica a las ruedas 0 y 1).
+function crearFisicaQuad(anclajes, radio, medioAncho, medioLargo) {
+  chassisBody = new CANNON.Body({ mass: 200, material: quadMaterial });
+  // 1) carroceria
+  chassisBody.addShape(new CANNON.Box(new CANNON.Vec3(medioAncho, 0.25, medioLargo)), new CANNON.Vec3(0, 0.2, 0));
+  // 2) una esfera por rueda: en marcha no tocan el suelo, pero al volcar apoyan
+  //    ellas y la rueda ya no puede atravesar el plano
+  for (var k = 0; k < 4; k++) {
+    chassisBody.addShape(new CANNON.Sphere(0.3),
+      new CANNON.Vec3(anclajes[k][0], anclajes[k][1], anclajes[k][2]));
+  }
+  chassisBody.angularDamping = 0.05;
+  chassisBody.position.copy(pos_inicial);
+
+  vehicle = new CANNON.RaycastVehicle({
+    chassisBody: chassisBody,
+    indexRightAxis: 0,
+    indexUpAxis: 1,
+    indexForwardAxis: 2
+  });
   for (var i = 0; i < 4; i++) {
-    opcionesRueda.chassisConnectionPointLocal.set(anclajes[i][0], altoAnclaje, anclajes[i][1]);
-    vehicle.addWheel(opcionesRueda);
+    var op = opcionesRueda(radio);
+    op.chassisConnectionPointLocal.set(anclajes[i][0], anclajes[i][1], anclajes[i][2]);
+    vehicle.addWheel(op);
   }
   vehicle.addToWorld(world);
 
@@ -1269,12 +1258,152 @@ function crearQuad() {
   chassisBody.addEventListener('collide', function (e) {
     if (Math.abs(e.contact.getImpactVelocityAlongNormal()) > 5) impactoFuerte = 0.35;
   });
+}
 
-  // visual simple
+// Carga asincrona (como en tron.html / s5-cubemap2). Mientras carga, quad === null
+// y update() no hace nada (guard clause). El gestorCarga hace que ENTER espere al modelo.
+function crearQuad() {
+  new THREE.GLTFLoader(gestorCarga).load(RUTA_MODELO, montarModeloQuad, undefined, function (error) {
+    console.warn('No se pudo cargar el modelo del quad: se usa el quad basico', error);
+    crearQuadBasico();
+  });
+}
+
+// Calculo puro (sin Three): a partir de la caja envolvente de cada pieza decide cuales
+// son las ruedas, la escala y donde van los anclajes de la fisica.
+//   cajas: [{ min: {x,y,z}, max: {x,y,z} }] en coordenadas del modelo (ya girado)
+function calcularMedidasQuad(cajas) {
+  function centro(c) { return { x: (c.min.x + c.max.x) / 2, y: (c.min.y + c.max.y) / 2, z: (c.min.z + c.max.z) / 2 }; }
+  function volumen(c) { return (c.max.x - c.min.x) * (c.max.y - c.min.y) * (c.max.z - c.min.z); }
+
+  // las 4 piezas mas pequenas son las ruedas; todo lo demas es el chasis
+  var orden = cajas.map(function (c, i) { return i; })
+    .sort(function (a, b) { return volumen(cajas[a]) - volumen(cajas[b]); });
+  var idxRuedas = orden.slice(0, 4), idxChasis = orden.slice(4);
+
+  // centro del vehiculo = media de los centros de las 4 ruedas
+  var centros = idxRuedas.map(function (i) { return centro(cajas[i]); });
+  var C = { x: 0, y: 0, z: 0 };
+  centros.forEach(function (c) { C.x += c.x / 4; C.y += c.y / 4; C.z += c.z / 4; });
+
+  // escala: que el modelo entero mida LARGO_QUAD de punta a punta
+  var minZ = Infinity, maxZ = -Infinity;
+  cajas.forEach(function (c) { minZ = Math.min(minZ, c.min.z); maxZ = Math.max(maxZ, c.max.z); });
+  var s = LARGO_QUAD / (maxZ - minZ);
+
+  // orden fisico: las 2 de z mayor son las delanteras; dentro de cada eje, x positiva primero
+  var porZ = [0, 1, 2, 3].sort(function (a, b) { return centros[b].z - centros[a].z; });
+  function porX(a, b) { return centros[b].x - centros[a].x; }
+  var ruedasOrden = porZ.slice(0, 2).sort(porX).concat(porZ.slice(2).sort(porX));
+
+  // anclajes: posicion de cada rueda respecto al centro, escalada. En altura se respeta
+  // la pose del modelo (ruedas mas altas o mas bajas) alrededor de ALTO_ANCLAJE.
+  var anclajes = ruedasOrden.map(function (k) {
+    var c = centros[k];
+    return [(c.x - C.x) * s, ALTO_ANCLAJE + (c.y - C.y) * s, (c.z - C.z) * s];
+  });
+
+  // radio y ancho de rueda: la rueda gira sobre X, asi que su diametro es el lado Y/Z
+  var r0 = cajas[idxRuedas[ruedasOrden[0]]];
+  var radio = Math.max(r0.max.y - r0.min.y, r0.max.z - r0.min.z) / 2 * s;
+  var anchoRueda = (r0.max.x - r0.min.x) * s;
+
+  // caja fisica del chasis: como la carroceria, pero sin meterse en las ruedas
+  var cx = { min: Infinity, max: -Infinity }, cz = { min: Infinity, max: -Infinity };
+  idxChasis.forEach(function (i) {
+    cx.min = Math.min(cx.min, cajas[i].min.x); cx.max = Math.max(cx.max, cajas[i].max.x);
+    cz.min = Math.min(cz.min, cajas[i].min.z); cz.max = Math.max(cz.max, cajas[i].max.z);
+  });
+  var ruedaInterior = Math.min.apply(null, anclajes.map(function (a) { return Math.abs(a[0]); })) - anchoRueda / 2;
+  var medioAncho = Math.min((cx.max - cx.min) / 2 * s, ruedaInterior - 0.02);
+  var medioLargo = (cz.max - cz.min) / 2 * s * 0.9;
+
+  return {
+    idxRuedas: ruedasOrden.map(function (k) { return idxRuedas[k]; }),   // indices de pieza, en orden fisico
+    centrosRuedas: ruedasOrden.map(function (k) { return centros[k]; }),
+    idxChasis: idxChasis,
+    centro: C, escala: s, anclajes: anclajes,
+    radio: radio, anchoRueda: anchoRueda, medioAncho: medioAncho, medioLargo: medioLargo
+  };
+}
+
+function montarModeloQuad(gltf) {
+  var raiz = gltf.scene;
+  raiz.updateMatrixWorld(true);
+
+  // 1. "hornear" cada malla: su posicion/giro/escala dentro del modelo (incluido el giro
+  //    que anade Sketchfab) pasan a la propia geometria. Asi trabajamos con piezas sueltas.
+  var piezas = [];
+  raiz.traverse(function (o) {
+    if (!o.isMesh) return;
+    var geo = o.geometry.clone().applyMatrix4(o.matrixWorld);
+    if (MODELO_AL_REVES) geo.rotateY(Math.PI);    // el morro pasa a mirar hacia +Z
+    geo.computeBoundingBox();
+    piezas.push({ geo: geo, material: o.material, caja: geo.boundingBox });
+  });
+  if (piezas.length < 5) {
+    console.warn('El modelo no tiene chasis + 4 ruedas separadas: se usa el quad basico');
+    crearQuadBasico();
+    return;
+  }
+
+  // 2. medidas: que pieza es cada rueda, escala y anclajes
+  var m = calcularMedidasQuad(piezas.map(function (p) { return p.caja; }));
+  console.log('Quad: escala ' + m.escala.toFixed(3) + ', radio rueda ' + m.radio.toFixed(2) +
+    ' m, anclajes ' + JSON.stringify(m.anclajes.map(function (a) { return a.map(function (v) { return +v.toFixed(2); }); })));
+
+  // 3. fisica con las medidas reales del modelo
+  crearFisicaQuad(m.anclajes, m.radio, m.medioAncho, m.medioLargo);
+
+  // 4. chasis visual: centrado en las ruedas, escalado y bajado hasta donde la
+  //    suspension deja las ruedas en reposo (anclaje - muelle cargado)
+  quad = new THREE.Group();
+  m.idxChasis.forEach(function (i) {
+    var geo = piezas[i].geo;
+    geo.translate(-m.centro.x, -m.centro.y, -m.centro.z);
+    geo.scale(m.escala, m.escala, m.escala);
+    geo.translate(0, ALTO_ANCLAJE - SUSPENSION_CARGADA, 0);
+    quad.add(new THREE.Mesh(geo, piezas[i].material));
+  });
+  scene.add(quad);
+
+  // 5. ruedas: cada una centrada en SU eje (si no, giraria como una noria descentrada).
+  //    Van sueltas en la escena porque su posicion la calcula el RaycastVehicle.
+  m.idxRuedas.forEach(function (i, n) {
+    var c = m.centrosRuedas[n], geo = piezas[i].geo;
+    geo.translate(-c.x, -c.y, -c.z);
+    geo.scale(m.escala, m.escala, m.escala);
+    var rueda = new THREE.Mesh(geo, piezas[i].material);
+    scene.add(rueda);
+    ruedas.push(rueda);
+  });
+
+  prepararMallasQuad();
+}
+
+// sombras y reflejos para todas las piezas del quad (modelo o basico)
+function prepararMallasQuad() {
+  quad.traverse(function (o) { if (o.isMesh) o.castShadow = true; });
+  ruedas.forEach(function (r) { r.castShadow = true; });
+  var mallas = [];
+  quad.traverse(function (o) { if (o.isMesh) mallas.push(o); });
+  mallas.concat(ruedas).forEach(function (o) {
+    var mat = o.material;
+    if (mat && mat.isMeshStandardMaterial && materialesPBR.indexOf(mat) < 0) {
+      mat.envMapIntensity = ajustesLuz.reflejos;   // reflejan la nave como el resto de metales
+      materialesPBR.push(mat);                     // y responden al control "Reflejos" del panel
+    }
+  });
+}
+
+// Quad de cajas (el de siempre): solo se usa si el modelo no carga
+function crearQuadBasico() {
+  crearFisicaQuad([[0.6, ALTO_ANCLAJE, 0.7], [-0.6, ALTO_ANCLAJE, 0.7],
+  [0.6, ALTO_ANCLAJE, -0.7], [-0.6, ALTO_ANCLAJE, -0.7]], 0.35, 0.5, 0.9);
+
   quad = new THREE.Group();
   var matCarroceria = new THREE.MeshPhongMaterial({ color: colorSRGB(0xff66ff), shininess: 60 });
   var matNegro = new THREE.MeshPhongMaterial({ color: colorSRGB(0x222222) });
-
   var chasis = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.3, 1.8), matCarroceria);
   chasis.position.y = 0.15;
   quad.add(chasis);
@@ -1285,26 +1414,17 @@ function crearQuad() {
   manillar.rotation.z = Math.PI / 2;
   manillar.position.set(0, 0.6, 0.45);
   quad.add(manillar);
-  var faro = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.15, 0.05), new THREE.MeshBasicMaterial({ color: colorSRGB(0xffffcc) }));
-  faro.position.set(0, 0.2, 0.92);
-  quad.add(faro);
-  quad.traverse(function (o) { if (o.isMesh) o.castShadow = true; });
   scene.add(quad);
-  quad.body = chassisBody;              // relacion fisica-visual como en seminario 4 fisicas
 
-  // Ruedas: van sueltas en la escena porque su posicion la calcula el vehiculo
   var geoRueda = new THREE.CylinderGeometry(0.35, 0.35, 0.3, 20);
   geoRueda.rotateZ(Math.PI / 2);        // el cilindro pasa a girar sobre el eje X
   for (var j = 0; j < 4; j++) {
     var rueda = new THREE.Mesh(geoRueda, matNegro);
-    // una franja de color para ver que la rueda gira
-    var franja = new THREE.Mesh(new THREE.BoxGeometry(0.31, 0.08, 0.6), matCarroceria);
-    rueda.add(franja);
-    rueda.castShadow = true;
-    franja.castShadow = true;
+    rueda.add(new THREE.Mesh(new THREE.BoxGeometry(0.31, 0.08, 0.6), matCarroceria));  // franja: se ve girar
     scene.add(rueda);
     ruedas.push(rueda);
   }
+  prepararMallasQuad();
 }
 
 function actualizarEstadoQuad(delta) {
