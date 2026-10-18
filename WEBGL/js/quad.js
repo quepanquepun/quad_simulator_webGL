@@ -1,10 +1,9 @@
 /*
- * Seminario practico: Tron Battle Grid
+ * Proyecto GPC Freestyle simulator
  *
- * Punto de partida copiado de js/base-sample.js (usado por ej-base.html).
- * Se han dejado tambien disponibles GLTFLoader y FBXLoader siguiendo
- * js/ej-loader.js y js/ej-loader-FBX.js, pero aqui no se carga ningun modelo:
- * esa parte se construira durante el seminario.
+ * Realizado por Jorge Rodríguez González
+ * Curso 2026-2027
+ * MIARFID UPV
  */
 
 
@@ -20,28 +19,25 @@ const groundMaterial = new CANNON.Material("groundMaterial");
 const quadMaterial = new CANNON.Material("quadMaterial");
 
 // nave industrial
-const ancho_nave = 90;      // eje X
-const largo_nave = 140;     // eje Z
-const alto_nave = 20;       // altura hasta la parte baja de las cerchas
-const canto_cercha = 0.8;   // altura de la cercha en los extremos
-const flecha_cercha = 4;    // altura de la cercha en el centro (cumbrera)
+const ancho_nave = 90;
+const largo_nave = 140;
+const alto_nave = 20;
+const canto_cercha = 0.8;
+const flecha_cercha = 4;
 const alto_zocalo = 3;
-var MAT = {};               // todos los materiales en un sitio
+var MAT = {};//todos los materiales en un lugar
 
-//rampas creadas
+//rampas creadas, todos los perfiles para despues extrusionar
 
 const RAMPAS = [
-  // LINEA CENTRAL
   { perfil: perfilQuarter(6, 98, 2), ancho: 30, x: 0, z: -65.5, rumbo: Math.PI }, // detras de la salida
   { perfil: perfilMesa(3, 7, 10, 14), ancho: 10, x: 0, z: -25 },   // tabletop
   { perfil: perfilKicker(7, 2.5), ancho: 6, x: 0, z: 3 },     // kicker
   { perfil: perfilMesa(3, 1.5, 4, 14), ancho: 12, x: 0, z: 23 },    // su aterrizaje
   { perfil: perfilQuarter(6, 98, 2), ancho: 30, x: 0, z: 65.5 },  // quarter del fondo
-  // LINEA GRANDE (x negativa)
   { perfil: perfilKicker(12, 5), ancho: 8, x: -28, z: -35 },   // mega kicker
   { perfil: perfilMesa(5, 3, 6, 22), ancho: 10, x: -28, z: -4.5 },  // aterrizaje grande
   { perfil: perfilLineal(8, 2.6), ancho: 4.8, x: -34.75, z: 30 }, // subida a contenedores
-  // LINEA TECNICA (x positiva)
   { perfil: perfilSpine(5, 55), ancho: 12, x: 28, z: -30 },
   { perfil: perfilBaches(5, 4, 0.8), ancho: 8, x: 28, z: 0 },
   { perfil: perfilMesa(3, 1.5, 4, 14), ancho: 10, x: 28, z: 30, rumbo: Math.PI }, // aterrizaje de vuelta
@@ -82,7 +78,7 @@ const margenVuelta = THREE.MathUtils.degToRad(60); // 300 grados ya cuentan como
 var puntos = 0;
 var temporizadorTruco = null;
 const fuerzaMotor = 400;  // N/m por rueda??
-const velocidadMax = 18;    // m/s 
+const velocidadMax = 23;    // m/s 
 const fuerzaFreno = 5;
 const giroMax = 0.65;   // radianes que giran las ruedas delanteras
 var direccion = 0;     // giro actual (suavizado)
